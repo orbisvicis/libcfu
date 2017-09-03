@@ -21,7 +21,6 @@ AC_CHECK_HEADERS([stdarg.h sys/time.h])
 AC_C_CONST
 AC_C_INLINE
 AC_TYPE_SIZE_T
-AC_TYPE_UINT64_T
 
 # Checks for library functions.
 AC_FUNC_MALLOC
