@@ -73,11 +73,13 @@ struct cfulist {
 
 cfulist_t *
 cfulist_new(void) {
-	cfulist_t *list = calloc(1, sizeof(cfulist_t));
+	cfulist_t *list;
+	if (!(list = malloc(sizeof(*list))))
+		return list;
+	*list = (cfulist_t){.type=libcfu_t_list};
 #ifdef HAVE_PTHREAD_H
 	pthread_mutex_init(&list->mutex, NULL);
 #endif
-	list->type = libcfu_t_list;
 	return list;
 }
 
@@ -90,13 +92,20 @@ cfulist_new_with_free_fn(cfulist_free_fn_t free_fn) {
 
 static CFU_INLINE void
 _cfulist_free_entry(cfulist_entry *entry, cfulist_free_fn_t list_ff,
-		cfulist_free_fn_t override_ff) {
+		cfulist_free_fn_t override_ff, void **data, size_t *data_size) {
+	cfulist_free_fn_t ff;
 	if (!entry)
 		return;
-	if (override_ff)
-		override_ff(entry->data);
-	else if (list_ff)
-		list_ff(entry->data);
+	ff = override_ff ? override_ff : list_ff;
+	if (ff) {
+		ff(entry->data);
+		entry->data = NULL;
+		entry->data_size = 0;
+	}
+	if (data)
+		*data = entry->data;
+	if (data_size)
+		*data_size = entry->data_size;
 	free(entry);
 }
 
@@ -121,7 +130,11 @@ unlock_list(cfulist_t *list) {
 
 static CFU_INLINE cfulist_entry *
 new_list_entry(void) {
-	return calloc(1, sizeof(cfulist_entry));
+	cfulist_entry *entry;
+	if (!(entry = malloc(sizeof(*entry))))
+		return entry;
+	*entry = (struct cfulist_entry){0};
+	return entry;
 }
 
 int
@@ -308,13 +321,55 @@ cfulist_last_data(cfulist_t *list, void **data, size_t *data_size) {
 	return rv;
 }
 
+// Add a new entry, shifting the old entry either right of left. If entry_old
+// is NULL, a right shift places the new entry at the head of the list. If
+// entry_old is NULL, a left shift places the new entry at the tail of the
+// list.
 int
-_cfulist_remove_entry(cfulist_t *list, cfulist_entry *entry,
-		cfulist_free_fn_t ff, void **data, size_t *data_size) {
+_cfulist_add_entry_at(cfulist_t *list, cfulist_entry *entry_new,
+		cfulist_entry *entry_old, int shift_old_left) {
+	if (!list || !entry_new)
+		return 0;
+	if (shift_old_left) {
+		if (!entry_old)
+			entry_old = list->tail;
+
+		entry_new->prev = entry_old;
+		entry_new->next = entry_old ? entry_old->next : entry_old;
+
+		if (entry_old && entry_old->next)
+			entry_old->next->prev = entry_new;
+		else
+			list->tail = entry_new;
+
+		if (entry_old)
+			entry_old->next = entry_new;
+	}
+	else {
+		if (!entry_old)
+			entry_old = list->entries;
+
+		entry_new->prev = entry_old? entry_old->prev : entry_old;
+		entry_new->next = entry_old;
+
+		if (entry_old && entry_old->prev)
+			entry_old->prev->next = entry_new;
+		else
+			list->entries = entry_new;
+
+		if (entry_old)
+			entry_old->prev = entry_new;
+	}
+	list->num_entries++;
+	assert(list->entries && !list->entries->prev);
+	assert(list->tail && !list->tail->next);
+	return 1;
+}
+
+int
+_cfulist_unlink_entry(cfulist_t *list, cfulist_entry *entry) {
 	if (!list || !entry)
 		return 0;
-	if (!ff)
-		ff = list->free_fn;
 	if (entry->next)
 		entry->next->prev = entry->prev;
 	else
@@ -323,16 +378,6 @@ _cfulist_remove_entry(cfulist_t *list, cfulist_entry *entry,
 		entry->prev->next = entry->next;
 	else
 		list->entries = entry->next;
-	if (ff) {
-		ff(entry->data);
-		entry->data = NULL;
-		entry->data_size = 0;
-	}
-	if (data)
-		*data = entry->data;
-	if (data_size)
-		*data_size = entry->data_size;
-	free(entry);
 	assert(list->num_entries > 0);
 	list->num_entries--;
 	if (list->entries)
@@ -342,12 +387,23 @@ _cfulist_remove_entry(cfulist_t *list, cfulist_entry *entry,
 	return 1;
 }
 
+int
+_cfulist_remove_entry(cfulist_t *list, cfulist_entry *entry,
+		cfulist_free_fn_t ff, void **data, size_t *data_size) {
+	if (!list || !entry)
+		return 0;
+	if (!_cfulist_unlink_entry(list, entry))
+		return 0;
+	_cfulist_free_entry(entry, list->free_fn, ff, data, data_size);
+	return 1;
+}
+
 cfulist_entry *
 _cfulist_find_entry(cfulist_t *list, size_t n) {
 	size_t i;
 	cfulist_entry *entry;
 	
-	if (!list)
+	if (!list || n >= list->num_entries)
 		return NULL;
 	
 	for (i = 0, entry = list->entries; entry && i < n; i++, entry = entry->next)
@@ -357,6 +413,20 @@ _cfulist_find_entry(cfulist_t *list, size_t n) {
 		assert(i == n);
 
 	return entry;
+}
+
+cfulist_entry *
+_cfulist_find_entry_relative(cfulist_t *list, int n) {
+	if (!list)
+		return NULL;
+
+	if (n < 0)
+		n += list->num_entries;
+
+	if (n < 0)
+		return NULL;
+
+	return _cfulist_find_entry(list, n);
 }
 
 int
@@ -623,7 +693,7 @@ cfulist_destroy_with_free_fn(cfulist_t *list, cfulist_free_fn_t free_fn) {
 	entry = list->entries;
 	while (entry) {
 		next = entry->next;
-		_cfulist_free_entry(entry, list->free_fn, free_fn);
+		_cfulist_free_entry(entry, list->free_fn, free_fn, NULL, NULL);
 		entry = next;
 	}
 	unlock_list(list);
