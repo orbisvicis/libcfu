@@ -46,6 +46,10 @@ CFU_BEGIN_DECLS
 /* The list itself. */
 typedef struct cfulist cfulist_t;
 
+/* Function that determines whether or not to remove an element from the list
+ */
+typedef int (*cfulist_remove_fn_t)(void *data, size_t data_size, void *arg);
+
 /* Function called for each element in the list when passed to
  * cfulist_foreach().  A non-zero return value means to stop
  * iteration.
@@ -103,14 +107,32 @@ int cfulist_first_data(cfulist_t *list, void **data, size_t *data_size);
  */
 int cfulist_last_data(cfulist_t *list, void **data, size_t *data_size);
 
-/* Return the nth entry from the list (without removing it from
- * the list).  n starts at zero.
-*/
+/* Store the nth entry from the list (without removing it) in the provided
+ * parameters. Index starts at zero. Return false (0) if index is out of range
+ * or list is NULL, true (1) otherwise. If false, the output parameters (data,
+ * data_size) will not have been set.
+ */
 int cfulist_nth_data(cfulist_t *list, void **data, size_t *data_size, size_t n);
+
+/* Remove and store the nth entry from the list in the provided parameters.
+ * Index starts at zero. Return false (0) if index is out of range or list is
+ * NULL, true (1) otherwise. If false, the output parameters (data, data_size)
+ * will not have been set.
+ */
+int cfulist_remove_nth_data(cfulist_t *list, void **data, size_t *data_size,
+        size_t n, cfulist_free_fn_t ff);
 
 void cfulist_reset_each(cfulist_t *list);
 int cfulist_each_data(cfulist_t *list, void **data, size_t *data_size);
 int cfulist_next_data(cfulist_t *list, void **data, size_t *data_size);
+
+/* Calls r_fn() for each element in the list, also passing arg. Removes each
+ * element for which r_fn() return true. The function ff(), if not NULL, is
+ * used to free the element, superseding any free function already set on the
+ * list. Returns the number of elements removed.
+ */
+size_t cfulist_foreach_remove(cfulist_t *list, cfulist_remove_fn_t r_fn,
+	cfulist_free_fn_t ff, void *arg);
 
 /* Calls fe_fn() for each element in the list. Also passes arg on
  * each call. If fe_fn() returns a non-zero value, the iteration

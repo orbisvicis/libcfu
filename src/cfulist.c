@@ -297,31 +297,94 @@ cfulist_last_data(cfulist_t *list, void **data, size_t *data_size) {
 }
 
 int
-cfulist_nth_data(cfulist_t *list, void **data, size_t *data_size, size_t n) {
-	int rv = 0;
-	size_t i = 0;
-	cfulist_entry *ptr = NULL;
-
-	if (!list) {
+_cfulist_remove_entry(cfulist_t *list, cfulist_entry *entry,
+		cfulist_free_fn_t ff, void **data, size_t *data_size) {
+	if (!list || !entry)
 		return 0;
+	if (!ff)
+		ff = list->free_fn;
+	if (entry->next)
+		entry->next->prev = entry->prev;
+	else
+		list->tail = entry->prev;
+	if (entry->prev)
+		entry->prev->next = entry->next;
+	else
+		list->entries = entry->next;
+	if (ff) {
+		ff(entry->data);
+		entry->data = NULL;
+		entry->data_size = 0;
 	}
+	if (data)
+		*data = entry->data;
+	if (data_size)
+		*data_size = entry->data_size;
+	free(entry);
+	assert(list->num_entries > 0);
+	list->num_entries--;
+	if (list->entries)
+		assert(!list->entries->prev);
+	if (list->tail)
+		assert(!list->tail->next);
+	return 1;
+}
+
+cfulist_entry *
+_cfulist_find_entry(cfulist_t *list, size_t n) {
+	size_t i;
+	cfulist_entry *entry;
+	
+	if (!list)
+		return NULL;
+	
+	for (i = 0, entry = list->entries; entry && i < n; i++, entry = entry->next)
+		;
+
+	if (entry)
+		assert(i == n);
+
+	return entry;
+}
+
+int
+cfulist_nth_data(cfulist_t *list, void **data, size_t *data_size, size_t n) {
+	cfulist_entry *entry;
+	int status;
+
+	if (!list)
+		return 0;
 
 	lock_list(list);
-	if (list->entries) {
-		for (i = 0, ptr = list->entries; ptr && i < n; i++, ptr = ptr->next);
-		if (ptr && i == n) {
-			rv = 1;
-			*data = ptr->data;
-			if (data_size) *data_size = list->entries->data_size;
-		}
-	} else {
-		rv = 0;
-		*data = NULL;
-		*data_size = 0;
+	if (entry = _cfulist_find_entry(list, n)) {
+		if (data)
+			*data = entry->data;
+		if (data_size)
+			*data_size = entry->data_size;
+		status = 1;
+	}
+	else {
+		status = 0;
 	}
 	unlock_list(list);
 
-	return rv;
+	return status;
+}
+
+int
+cfulist_remove_nth_data(cfulist_t *list, void **data, size_t *data_size,
+		size_t n, cfulist_free_fn_t ff) {
+	cfulist_entry *entry;
+	int status;
+	
+	if (!list)
+		return 0;
+
+	lock_list(list);
+	entry = _cfulist_find_entry(list, n);
+	status = _cfulist_remove_entry(list, entry, ff, data, data_size);
+	unlock_list(list);
+	return status;
 }
 
 void
@@ -348,6 +411,28 @@ cfulist_next_data(cfulist_t *list, void **data, size_t *data_size) {
 		return 1;
 	}
 	return 0;
+}
+
+size_t
+cfulist_foreach_remove(cfulist_t *list, cfulist_remove_fn_t r_fn,
+		cfulist_free_fn_t ff, void *arg) {
+	cfulist_entry *entry = NULL;
+	size_t num_removed = 0;
+
+	if (!list)
+		return num_removed;
+	
+	lock_list(list);
+	for (entry = list->entries; entry; entry = entry->next) {
+		if (!r_fn(entry->data, entry->data_size, arg))
+			continue;
+		if (!_cfulist_remove_entry(list, entry, ff, NULL, NULL))
+			continue;
+		num_removed++;
+	}
+	unlock_list(list);
+
+	return num_removed;
 }
 
 size_t
