@@ -88,6 +88,18 @@ cfulist_new_with_free_fn(cfulist_free_fn_t free_fn) {
 	return list;
 }
 
+static CFU_INLINE void
+_cfulist_free_entry(cfulist_entry *entry, cfulist_free_fn_t list_ff,
+		cfulist_free_fn_t override_ff) {
+	if (!entry)
+		return;
+	if (override_ff)
+		override_ff(entry->data);
+	else if (list_ff)
+		list_ff(entry->data);
+	free(entry);
+}
+
 size_t
 cfulist_num_entries(cfulist_t *list) {
 	return list->num_entries;
@@ -596,46 +608,23 @@ cfulist_join(cfulist_t *list, const char *delimiter) {
 
 void
 cfulist_destroy(cfulist_t *list) {
-	if (!list) return;
-
-	if (list->free_fn) {
-		cfulist_destroy_with_free_fn(list, list->free_fn);
-		return;
-	}
-
-	lock_list(list);
-	if (list->entries) {
-		cfulist_entry *entry = NULL;
-		cfulist_entry *tmp = NULL;
-		entry = list->entries;
-		while (entry) {
-			tmp = entry->next;
-			free(entry);
-			entry = tmp;
-		}
-	}
-	unlock_list(list);
-#ifdef HAVE_PTHREAD_H
-	pthread_mutex_destroy(&list->mutex);
-#endif
-	free(list);
+	cfulist_destroy_with_free_fn(list, NULL);
 }
 
 void
 cfulist_destroy_with_free_fn(cfulist_t *list, cfulist_free_fn_t free_fn) {
-	if (!list) return;
+	cfulist_entry *entry;
+	cfulist_entry *next;
+
+	if (!list)
+		return;
 
 	lock_list(list);
-	if (list->entries) {
-		cfulist_entry *entry = NULL;
-		cfulist_entry *tmp = NULL;
-		entry = list->entries;
-		while (entry) {
-			tmp = entry->next;
-			if (free_fn) free_fn(entry->data);
-			free(entry);
-			entry = tmp;
-		}
+	entry = list->entries;
+	while (entry) {
+		next = entry->next;
+		_cfulist_free_entry(entry, list->free_fn, free_fn);
+		entry = next;
 	}
 	unlock_list(list);
 #ifdef HAVE_PTHREAD_H
