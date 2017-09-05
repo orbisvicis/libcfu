@@ -639,12 +639,19 @@ cfuhash_keys(cfuhash_table_t *ht, size_t *num_keys, int fast) {
 	return cfuhash_keys_data(ht, num_keys, NULL, fast);
 }
 
+void
+cfuhash_reset_each(cfuhash_table_t *ht) {
+	if (!ht)
+		return;
+	ht->each_bucket_index = -1;
+	ht->each_chain_entry = NULL;
+}
+
 int
 cfuhash_each_data(cfuhash_table_t *ht, void **key, size_t *key_size, void **data,
 	size_t *data_size) {
 
-	ht->each_bucket_index = -1;
-	ht->each_chain_entry = NULL;
+	cfuhash_reset_each(ht);
 
 	return cfuhash_next_data(ht, key, key_size, data, data_size);
 }

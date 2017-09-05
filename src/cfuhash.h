@@ -163,10 +163,14 @@ void * cfuhash_delete_data(cfuhash_table_t *ht, const void *key, size_t key_size
 void **cfuhash_keys_data(cfuhash_table_t *ht, size_t *num_keys, size_t **key_sizes,
 	int fast);
 
-/* Initializes a loop over all the key/value pairs in the hash.  It
- * returns the first key/value pair (see cfuhash_next_data()).  1 is
- * returned if there are any entries in the hash.  0 is returned
- * otherwise.
+/* Initialize a loop over all the key/value pairs in the hash.
+ */
+void cfuhash_reset_each(cfuhash_table_t *ht);
+
+/* Initializes a loop over all the key/value pairs in the hash (see
+ * cfuhash_reset_each()). It stores the first key/value pair (see
+ * cfuhash_next_data()) in the output parameters. Returns true (1) if there is
+ * an available pair, false (0) otherwise.
  */
 int cfuhash_each_data(cfuhash_table_t *ht, void **key, size_t *key_size, void **data,
 	size_t *data_size);
