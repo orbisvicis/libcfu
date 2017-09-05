@@ -112,9 +112,13 @@ struct cfuhash_table {
 	cfuhash_event_flags event_flags;
 };
 
-/* Perl's hash function */
-static uint_fast32_t
-hash_func(const void *key, size_t length) {
+/* One-at-a-Time Hash Function, from [1]. Used by perl. See [2] for more
+ * information. Public domain.
+ *  1. http://www.burtleburtle.net/bob/hash/doobs.html
+ *  2. https://en.wikipedia.org/wiki/Jenkins_hash_function
+ */
+uint_fast32_t
+cfuhash_one_at_a_time_hash(const void *key, size_t length) {
 	register size_t i = length;
 	register unsigned int hv = 0; /* could put a seed here instead of zero */
 	register const unsigned char *s = (const unsigned char *)key;
@@ -194,7 +198,7 @@ _cfuhash_new(size_t size, unsigned int flags) {
 	pthread_mutex_init(&ht->mutex, NULL);
 #endif
 
-	ht->hash_func = hash_func;
+	ht->hash_func = cfuhash_one_at_a_time_hash;
 	ht->high = 0.75;
 	ht->low = 0.25;
 
@@ -299,7 +303,7 @@ cfuhash_set_hash_function(cfuhash_table_t *ht, cfuhash_function_t hf) {
 	/* can't allow changing the hash function if the hash already contains entries */
 	if (ht->entries) return -1;
 
-	ht->hash_func = hf ? hf : hash_func;
+	ht->hash_func = hf ? hf : cfuhash_one_at_a_time_hash;
 	return 0;
 }
 

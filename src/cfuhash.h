@@ -66,6 +66,12 @@ typedef int (*cfuhash_remove_fn_t)(void *key, size_t key_size, void *data, size_
 typedef int (*cfuhash_foreach_fn_t)(void *key, size_t key_size, void *data, size_t data_size,
 	void *arg);
 
+/* The fallback hash function. Made public for implementations that want to
+ * apply the hash function to pointed data without redefining the hash
+ * function.
+ */
+uint_fast32_t cfuhash_one_at_a_time_hash(const void *key, size_t length);
+
 /* Creates a new hash table. */
 cfuhash_table_t * cfuhash_new(void);
 
