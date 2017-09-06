@@ -477,18 +477,21 @@ cfulist_reset_each(cfulist_t *list) {
 
 int
 cfulist_each_data(cfulist_t *list, void **data, size_t *data_size) {
-	if (!list) return 0;
+	if (!list)
+		return 0;
 	cfulist_reset_each(list);
 	return cfulist_next_data(list, data, data_size);
 }
 
 int
 cfulist_next_data(cfulist_t *list, void **data, size_t *data_size) {
-	if (!list) return 0;
-	*data = NULL;
+	if (!list)
+		return 0;
 	if (list->each_ptr) {
-		*data = list->each_ptr->data;
-		*data_size = list->each_ptr->data_size;
+		if (data)
+			*data = list->each_ptr->data;
+		if (data_size)
+			*data_size = list->each_ptr->data_size;
 		list->each_ptr = list->each_ptr->next;
 		return 1;
 	}
