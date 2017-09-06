@@ -674,10 +674,14 @@ cfuhash_next_data(cfuhash_table_t *ht, void **key, size_t *key_size, void **data
 	}
 
 	if (ht->each_chain_entry) {
-		*key = ht->each_chain_entry->key;
-		*key_size = ht->each_chain_entry->key_size;
-		*data = ht->each_chain_entry->data;
-		if (data_size) *data_size = ht->each_chain_entry->data_size;
+		if (key)
+			*key = ht->each_chain_entry->key;
+		if (key_size)
+			*key_size = ht->each_chain_entry->key_size;
+		if (data)
+			*data = ht->each_chain_entry->data;
+		if (data_size)
+			*data_size = ht->each_chain_entry->data_size;
 		return 1;
 	}
 
